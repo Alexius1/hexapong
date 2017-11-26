@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+canvas {
+    background-color: #f1f1f1;
+    max-width: 95%;
+    max-height: 95%;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    margin: auto;
+}
+@font-face {
+    font-family: 'digiDream';
+    src: url('digital-dream.fat-narrow.ttf');
+}
+body {
+    background-color: #000000;
+}
+</style>
+</head>
+<body onload="startGame()">
+<script>
+
+var context;
+var canvas;
+var canvasSize;
+var hold=false;
+var goodRatios={0:1,1:9.0/8,2:5.0/4,3:3.0/2,4:5.0/3,5:2};
+
+var ball={
+  velocity:{x:0,y:0},
+  playerLastHitBy:-1,
+  timeAlive:0,
+  active:false,
+  position:{x:0,y:0},
+  updateI:{},
+
+  init : function(){
+    this.updateI=window.setInterval(function(){this.update(this)}.bind(this), 25);
+  },
+  turnOn : function(){
+    this.position={x:canvasSize.x*6/10,y:canvasSize.y/2};
+  	this.playerLastHitBy=-1;
+	  this.timeAlive=0;
+    this.active=true;
+	  this.velocity=rotateVector({x:1.0,y:0},Math.random()*2*Math.PI);
+  },
+  turnOff : function(){
+    this.active=false;
+  },
+  update : function(self){
+    if(!hold&&self.active&&playerCount()>2){
+      self.timeAlive+=1/60;
+      var tempV=self.velocity;
+      var tempP=self.position;
+      var tempM=self.timeAlive/10+1;
+      self.position=(addPoints([multiplyPoint(tempV,tempM),tempP]));
+      for(var i=0;i<maxPlayers;i++){
+        if(players[i].active){
+          var r1=linesIntersect(players[i].racket,[addPoints([self.position,{x:5,y:5}]),addPoints([self.position,{x:-5,y:-5}])]);
+          var r2=linesIntersect(players[i].racket,[addPoints([self.position,{x:-5,y:5}]),addPoints([self.position,{x:5,y:-5}])]);
+          if(r1!=-1||r2!=-1){
+            var normal={x:players[i].racket[1].y-players[i].racket[0].y,y:-players[i].racket[1].x+players[i].racket[0].x};
+            var magnitude=Math.sqrt(Math.pow(normal.x,2)+Math.pow(normal.y,2));
+            normal={x:normal.x/magnitude,y:normal.y/magnitude};
+            var res=(r1>=0)?r1:r2;
+            var bounce=Math.PI*(-res+(1-res))/(res+(1-res))*0.45;
+            self.velocity=rotateVector(normal,-bounce);
+            self.playerLastHitBy=i;
+          }
+          r1=linesIntersect(players[i].goalLine,[addPoints([self.position,{x:5,y:5}]),addPoints([self.position,{x:-5,y:-5}])]);
+          r2=linesIntersect(players[i].goalLine,[addPoints([self.position,{x:-5,y:5}]),addPoints([self.position,{x:5,y:-5}])]);
+          if(r1!=-1||r2!=-1){
+            players[i].score--;
+            if(self.playerLastHitBy!=-1)
+              players[self.playerLastHitBy].score+=2;
+            self.turnOn();
+          }
+        }
+      }
+    }
+  }
+};
+
+var balls=[];
+
+var player={
+  playerSize:0.0,
+  playerLine:[],
+  goalLine:[],
+  racket:{},
+  active:false,
+  inputN:-1,
+  position:0.5,
+  velocity:0,
+  updateI:{},
+  score:0,
+
+  activate : function(input){
+    this.playerSize=0.01;
+    this.active=true;
+    this.inputN=input;
+    this.updateI=window.setInterval(function(){this.update(this)}.bind(this), 25);
+  },
+
+  reset : function(){
+    this.active=false;
+    this.playerSize=0.99;
+    this.playerLine=[];
+    this.goalLine=[];
+    this.inputN=-1;
+    this.position=0.5;
+    this.velocity=0;
+    this.score=0;
+  },
+
+  update : function(self){
+    if(self.playerSize>0&&self.playerSize<1){
+      hold=true
+      if(self.active==true){
+        self.playerSize+=0.06;
+      }else{
+        self.playerSize-=0.06;
+      }
+      if(!(self.playerSize>0&&self.playerSize<1))
+        hold=false;
+    }
+  }
+};
+
+var playerIntervals=[];
+var players=[];
+var centerPos;
+
+const maxPlayers=10;
+const playerColors={
+0:("#3333FF"),1:("#830000"),2:("#CC6600"),3:("#00CCCC"),
+4:("#980083"),5:("#CCCC00"),6:("#00CC00"),7:("#884C00"),
+8:("#838383"),9:("#338366"),10:("#0C0C0C")}
+
+
+function startGame() {
+    myGameArea.start();
+}
+
+var myGameArea = {
+    canvas : document.createElement("canvas"),
+    start : function() {
+        for(var i=0;i<maxPlayers;i++){
+          players[i]={};
+          players[i]=Object.create(player);
+        }
+        this.canvas.width = 1600;
+        this.canvas.height = 800;
+        this.context = this.canvas.getContext("2d");
+        canvas=this.canvas;
+        window.onkeydown = function(e){
+          if(String.fromCharCode(e.keyCode)=="1")
+            players[0].position+=0.02;
+        };
+        for(var i=0;i<maxPlayers/2;i++){
+          balls[i]={};
+          balls[i]=Object.create(ball);
+          balls[i].init();
+        }
+        context=this.context;
+        document.body.insertBefore(this.canvas, document.body.childNodes[0]);
+        this.frameNo = 0;
+        this.interval = setInterval(updateGameArea, 25);
+        canvasSize={x:this.canvas.width,y:this.canvas.height};
+        centerPos={x:canvasSize.x/10*6,y:canvasSize.y/2};
+        },
+    clear : function() {
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+}
+
+function updateGameArea() {
+    var start = new Date().getTime();
+    myGameArea.clear();
+    context.shadowBlur=0;
+    myGameArea.frameNo += 1;
+
+    draw_playing_field();
+    drawScores();
+    drawPlayers();
+    drawBalls();
+    updatePlayerCount();
+    drawExplanation();
+    var elapsed = new Date().getTime() - start;
+    //console.log(elapsed);
+}
+
+function updatePlayerCount(){
+  for(var i=0;i<maxPlayers;i++){
+    if(players[i].active==false){
+      for(var j=0;j<maxPlayers;j++){
+        if (connections[j].playerNumber==i){
+          players[i].activate();
+          connections[j].dataChannel.send(playerColors[i]);
+        }
+      }
+    } else {
+      var j;
+      for(j=0;j<maxPlayers;j++){
+        if (connections[j].playerNumber==i)
+          break;
+      }
+      if(j>maxPlayers-1)
+        players[i].reset();
+    }
+  }
+}
+
+function drawScores(){
+  context.font=canvasSize.x/23+"px digiDream";
+  context.shadowOffsetX=0;
+  context.shadowOffsetY=0;
+  context.shadowBlur=15;
+  for(var i=0;i<10;i++){
+    context.fillStyle=playerColors[10];
+    context.shadowColor="#000000";
+    context.fillText("@@@@@@",canvasSize.x/50,canvasSize.y/10.5*(i+1));
+    if(players[i].active==true){
+      context.fillStyle=playerColors[i];
+      context.shadowColor=playerColors[i];
+      if(players[i].score<0){
+        if(players[i].score<=-10)
+          context.fillText("P"+i+"/"+players[i].score,canvasSize.x/50,canvasSize.y/10.5*(i+1));
+        else
+          context.fillText("P"+i+"/ "+players[i].score,canvasSize.x/50,canvasSize.y/10.5*(i+1));
+      }else if(players[i].score<10)
+        context.fillText("P"+i+"/ +"+players[i].score,canvasSize.x/50,canvasSize.y/10.5*(i+1));
+      else {
+          context.fillText("P"+i+"/+"+players[i].score,canvasSize.x/50,canvasSize.y/10.5*(i+1));
+      }
+    }
+  }
+}
+
+function draw_playing_field(){
+
+  context.beginPath();
+  context.rect(0, 0, canvasSize.x, canvasSize.y);
+  context.fillStyle = "#000000";
+  context.fill();
+  drawPoly([{x:0,y:0},{x:canvasSize.x/5,y:0},{x:canvasSize.x/5,y:canvasSize.y},{x:0,y:canvasSize.y}],"#888888",4,false)
+
+	if (playerCount()>0){
+		var points=[];
+    var lastPlayer;
+		var multiplier=0;
+		for (var i=0;i<maxPlayers;i++){
+			if (players[i].playerSize>0)
+			 	multiplier+=players[i].playerSize;
+    }
+		var size=-Math.PI/6;
+		multiplier=playerCount()/multiplier;
+		var pointTo=-1;
+		for (var i=0;i<playerCount();i++){
+			for (var j=pointTo;j<maxPlayers;j++){
+			  pointTo+=1;
+				if (players[pointTo].playerSize>0)
+					break;
+      }
+			points[i]=rotateVector({x:0,y:canvasSize.y/2},size);
+      points[i].x+=centerPos.x;
+      points[i].y+=centerPos.y;
+			if (i>=1){
+				players[lastPlayer].goalLine={0:points[i-1],1:points[i]};
+      }
+      size-=players[pointTo].playerSize*2*Math.PI*multiplier/playerCount();
+      lastPlayer=pointTo;
+    }
+		if (points.length>0){
+		  players[lastPlayer].goalLine={0:points[points.length-1],1:points[0]};
+    }
+    //console.log(players[1].goalLine[0].x+" "+players[1].goalLine[1].x);
+
+		var pointTo=-1;
+		for (var i=0 ; i<playerCount() ; i++){
+			for (var j=pointTo ; j<maxPlayers ; j++){
+			  pointTo+=1;
+				if (players[pointTo].playerSize>0)
+					break;
+      }
+			var temp=30/playerCount();
+      //todo wtf
+      var smaller=(pointTo-1+maxPlayers)%maxPlayers;
+      while(players[smaller].playerSize<=0){
+        smaller=(smaller-1+maxPlayers)%maxPlayers;
+      }
+      var p0={x:players[smaller].goalLine[1].x*temp,y:players[smaller].goalLine[1].y*temp};
+      p0=addPoints([p0,players[smaller].goalLine[0]]);
+      p0={x:p0.x/(1+temp),y:p0.y/(1+temp)};
+      var bigger=(pointTo+1)%maxPlayers;
+      while(players[bigger].playerSize<=0){
+        bigger=(bigger+1)%maxPlayers;
+      }
+      var p1={x:players[bigger].goalLine[0].x*temp,y:players[bigger].goalLine[0].y*temp};
+      p1=addPoints([p1,players[bigger].goalLine[1]]);
+      p1={x:p1.x/(1+temp),y:p1.y/(1+temp)};
+			players[pointTo].playerLine={0:p0,1:p1};
+			drawPoly([players[pointTo].playerLine[0],players[pointTo].playerLine[1]],playerColors[pointTo],1.0,true);
+    }
+    context.shadowBlur=15;
+    drawPoly(points,"#FFFFFF",4.0,false);
+    context.shadowBlur=0;
+  }
+}
+
+function drawPlayers(){
+	var pointTo=-1;
+	for (var i=0;i<playerCount();i++){
+		for (var j=pointTo;j<maxPlayers;j++){
+			pointTo+=1;
+			if (players[pointTo].playerSize>0)
+				break;
+    }
+		var position=players[pointTo].position;
+		var p1=players[pointTo].playerLine[0];
+		var p2=players[pointTo].playerLine[1];
+		var racketLengthX=(p1.x-p2.x)/8;
+    var racketLengthY=(p1.y-p2.y)/8;
+    var absPosition1={x:(p1.x*position+p2.x*(1-position)+racketLengthX/2),y:(p1.y*position+p2.y*(1-position)+racketLengthY/2)};
+    var absPosition2={x:(p1.x*position+p2.x*(1-position)-racketLengthX/2),y:(p1.y*position+p2.y*(1-position)-racketLengthY/2)};
+		players[pointTo].racket={0:absPosition1,1:absPosition2};
+    context.shadowColor=playerColors[pointTo];
+		drawPoly([absPosition1,absPosition2],playerColors[pointTo],5,true);
+  }
+}
+
+function drawBalls(){
+  context.fillStyle="#FFFFFF";
+  context.shadowColor="#FFFFFF";
+  for(var i=balls.length-1;i>=0;i--){
+    if(balls[i].active){
+      if(i>playerCount()/2-1)
+        balls[i].turnOff();
+      context.fillRect(balls[i].position.x-5,balls[i].position.y-5,10,10);
+    }else
+      if(i<=playerCount()/2-1)
+        balls[i].turnOn();
+  }
+}
+
+function drawExplanation(){
+  context.font=canvasSize.x/55+"px digiDream";
+  context.shadowColor="#FFFFFF";
+  context.fillStyle="#FFFFFF";
+  context.fillText("Go to placeholder ",canvasSize.x/50*11,canvasSize.y/15);
+  context.fillText("and enter: "+name,canvasSize.x/50*12,canvasSize.y/15*2);
+}
+
+function addPoints(input){
+  var x=0;
+  var y=0;
+  for (var i=0;i<input.length;i++){
+    x+=input[i].x;
+    y+=input[i].y;
+  }
+  return {x:x,y:y};
+}
+
+function subtractPoints(a,b){
+  return {x:a.x-b.x,y:a.y-b.y};
+}
+
+function multiplyPoint(p,f){
+  return {x:p.x*f,y:p.y*f};
+}
+
+function distance(a,b){
+  return Math.sqrt(Math.pow(Math.abs(a.x-b.x),2)+Math.pow(Math.abs(a.y-b.y),2));
+}
+
+//returns 0.0 - 1.0 if a hit -1 if not
+function linesIntersect(line1,line2){
+  //var result=Math.intersect([line1[0].x,line1[0].y],[line1[1].x,line1[1].y],[line2[0].x,line2[0].y],[line2[1].x,line2[1].y]);
+  var result=_intersect2d(line1[0],line1[1],line2[0],line2[1]);
+  //console.log(result);
+  if(result==null)
+    return -1;
+  else {
+    //check if in bounds
+    var dist1=distance(line2[0],result);
+    var dist2=distance(line2[1],result);
+    var dist3=distance(line2[0],line2[1]);
+    if(dist3>dist1&&dist3>dist2){
+      var dist4=distance(line1[0],result);
+      var dist5=distance(line1[1],result);
+      var dist6=distance(line1[0],line1[1]);
+      if(dist6>dist4&&dist6>dist5){
+        var res=((dist4-dist5)/(dist4+dist5)+1)/2;
+        if(res>=0&&res<=1)
+          return res;
+      }
+    }
+    return -1;
+  }
+}
+
+function _intersect2d(p1a, p1b, p2a, p2b){
+    var o1 = p1a;
+    var o2 = p2a;
+    var d1 = subtractPoints(o1, p1b);
+    var d2 = subtractPoints(o2, p2b);
+    var det = d1.x*d2.y - d2.x*d1.y;
+    if (Math.abs(det) < Number.EPSILON) {
+      return null;
+    }
+    var t = (d2.x*o1.y - d2.y*o1.x - d2.x*o2.y + d2.y*o2.x) / det;
+    return addPoints([multiplyPoint(d1, t), o1]);
+}
+
+function playerCount(){
+  var count=0;
+  for (var i=0;i<maxPlayers;i++)
+    if (players[i]["playerSize"]>0)
+    count++;
+  return count;
+}
+
+function rotateVector(input, rotation){
+  var result = [];
+  result.x = input.x * Math.cos(rotation) - input.y * Math.sin(rotation);
+  result.y = input.x * Math.sin(rotation) + input.y * Math.cos(rotation);
+  return result;
+}
+
+function drawPoly(a,color,thickness, open){
+  if(a.length>1){
+    context.beginPath();
+    context.lineWidth = thickness;
+    context.strokeStyle = color;
+    context.moveTo(a[0].x,a[0].y);
+    var length=a.length;
+    for(var i=1;i<length;i++){
+      context.lineTo(a[i].x,a[i].y);
+    }
+    if(!open)
+      context.lineTo(a[0].x,a[0].y);
+  }
+  context.stroke();
+}
+
+//Connection
+
+//our username
+var name=""+Math.ceil(Math.random()*100000);
+
+var connections=[];
+//id, dataChannel, playerNumber, name
+
+//connecting to our signaling server
+var conn = new WebSocket('ws://localhost:9090');
+
+conn.onopen = function () {
+   console.log("Connected to the signaling server");
+   login();
+};
+
+//when we got a message from a signaling server
+conn.onmessage = function (msg) {
+   console.log("Got message", msg.data);
+   var data = JSON.parse(msg.data);
+
+   switch(data.type) {
+      case "login":
+         handleLogin(data.success);
+         break;
+      //when somebody wants to call us
+      case "offer":
+         handleOffer(data.offer, data.from);
+         break;
+      case "answer":
+         handleAnswer(data.answer);
+         break;
+      //when a remote peer sends an ice candidate to us
+      case "candidate":
+         handleCandidate(data.candidate);
+         break;
+      case "leave":
+         handleLeave(data.from);
+         break;
+      default:
+         break;
+   }
+};
+
+conn.onerror = function (err) {
+   console.log("Got error", err);
+};
+
+//alias for sending JSON encoded messages
+function send(message,to) {
+   //attach the other peer username to our messages
+   if (to!=null) {
+      message.name = to;
+   }
+   message.from=name;
+   console.log(message);
+   conn.send(JSON.stringify(message));
+};
+
+// Login when the user clicks the button
+function login () {
+   if (name.length > 0) {
+      send({
+         type: "login",
+         name: name
+      },null);
+   }
+}
+
+function handleLogin(success) {
+   if (success === false) {
+      alert("Ooops...try a different username");
+   } else {
+     for(var i=0;i<10;i++)
+        restartRTC(i);
+   }
+};
+
+function restartRTC(id){
+
+  connections[id]={};
+
+  //**********************
+  //Starting a peer connection
+  //**********************
+
+  //using Google public stun server
+  var configuration = {
+    "urls": ["stun:stun.l.google.com:19302"]
+  };
+  connections[id].id = new RTCPeerConnection(configuration, {optional: [{GoogRtpDataChannels: true}]});
+
+  // Setup ice handling
+  connections[id].id.onicecandidate = function (event) {
+    //console.log(event);
+     if (event.candidate) {
+        send({
+           type: "candidate",
+           candidate: event.candidate
+        },connections[id].name);
+     }
+  }.bind({id:id});
+
+  //creating data channel
+  connections[id].dataChannel = connections[id].id.createDataChannel("channel1", {id:50, reliable:false, ordered: true});
+
+  connections[id].dataChannel.onerror = function (error) {
+     console.log("Ooops...error:", error);
+  };
+
+  connections[id].dataChannel.onopen = function () {
+     console.log("data channel is opened");
+  };
+
+  //when we receive a message from the other peer, display it on the screen
+  connections[id].dataChannel.onmessage = function (event) {
+    console.log(event.data);
+    if(connections[id].playerNumber==null){
+      var i;
+      for(i=0;i<maxPlayers;i++){
+        if(players[i].active==false)
+          break;
+      }
+      if(i<maxPlayers)
+        connections[id].playerNumber=i;
+    }
+    players[connections[id].playerNumber].position=Math.min(0.92, Math.max(0.08,parseFloat(event.data)));
+  }.bind({id:id});
+
+  connections[id].dataChannel.onclose = function () {
+     console.log("data channel is closed");
+  };
+}
+
+function handleLeave(name) {
+  temp=findName(name);
+  if(temp<10){
+   connections[temp].id.close();
+   connections[temp].id.onicecandidate = null;
+   restartRTC(temp);
+ }
+};
+
+//when somebody sends us an offer
+function handleOffer(offer, from) {
+    var temp=freeSpace();
+    if(temp<10){
+    connections[temp].name = from;
+    console.log("Got an offer from: ",from);
+    connections[temp].id.setRemoteDescription(new RTCSessionDescription(offer));
+    //create an answer to an offer
+    connections[temp].id.createAnswer(function (answer) {
+        connections[temp].id.setLocalDescription(answer);
+        send({
+          type: "answer",
+          answer: answer
+        },this.test);
+    }.bind({test:from}), function (error) {
+      alert("Error when creating an answer");
+    });
+  }
+};
+
+//when we got an answer from a remote user
+function handleAnswer(answer) {
+  var temp=findName(answer.from);
+  if(temp<10)
+    connections[temp].id.setRemoteDescription(new RTCSessionDescription(answer));
+  else {
+    console,log(answer.from+" not found");
+  }
+};
+
+//when we got an ice candidate from a remote user
+function handleCandidate(candidate) {
+  var temp=findName(candidate.from);
+  if(temp<10)
+    try{
+      console.log(connections[temp].id.iceGatheringState);
+      connections[temp].id.addIceCandidate(new RTCIceCandidate(candidate));
+    }catch(exc){
+      console.log(exc);
+    }
+  else {
+    console,log(candidate.from+" not found");
+  }
+};
+
+function findName(name){
+  var i;
+  for(i=0;i<10;i++){
+    if(connections[i]!=null&&connections[i].name==name)
+      break;
+  }
+  return i;
+};
+
+function freeSpace(){
+  var i;
+  for(i=0;i<10;i++){
+    if(connections[i]==null||connections[i].name==null)
+      break;
+  }
+  return i;
+}
+
+</script>
+</body>
+</html>

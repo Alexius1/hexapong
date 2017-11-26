@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+/*
+@media (orientation: landscape) {
+  body {
+    -webkit-transform: rotate(-90deg);
+    -moz-transform: rotate(-90deg);
+    -o-transform: rotate(-90deg);
+    -ms-transform: rotate(-90deg);
+    transform: rotate(-90deg);
+  }
+}*/
+
+canvas {
+    background-color: #000000;
+    max-width: 95%;
+    max-height: 95%;
+}
+@font-face {
+    font-family: 'digiDream';
+    src: url('digital-dream.fat-narrow.ttf');
+}
+body {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -o-user-select: none;
+  user-select: none;
+
+  background-color: #000000;
+}
+.white{
+  color:#FFFFFF;
+  font-family: "digiDream";
+  font-size: 30px;
+}
+.outer{
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top:0%;
+  text-align: center;
+}
+.center{
+  display: inline-block;
+}
+.fullWidth{
+  width: 100%;
+  font-family: "digiDream";
+  font-size: 20px;
+}
+.hidden{
+  left: -200%;
+}
+</style>
+</head>
+<body onload="startGame()">
+  <div id="before" class="outer"><br><br><br><br><br>
+    <div class="center">
+    <p class="white">Please enter the code</p>
+   <input class="fullWidth" id = "callToUsernameInput" type = "text"
+      placeholder = "Game ID" /><br><br>
+   <button id ="callBtn">Connect</button>
+ </div>
+</div>
+ <div id="after" class="outer hidden"><br><br><br><br><br>
+   <div class="center">
+   <p class="white">Thank you for playing</p>
+</div>
+</div>
+<script>
+
+var position=0.5;
+
+var context;
+var canvasSize={};
+
+var color="#000000";
+
+var state="new";
+
+function startGame() {
+    myControllerArea.start();
+}
+
+var myControllerArea = {
+    canvas : document.createElement("canvas"),
+    start : function() {
+        var width=window.innerWidth;
+        var height=window.innerHeight;
+        if(width>height){
+          this.canvas.width = width;
+          this.canvas.height = height;
+        }else{
+          this.canvas.width = height;
+          this.canvas.height = width;
+        }
+        canvasSize={x:this.canvas.width,y:this.canvas.height};
+        this.context = this.canvas.getContext("2d");
+        context=this.context;
+        document.body.insertBefore(this.canvas, document.body.childNodes[0]);
+        this.frameNo = 0;
+        this.interval = setInterval(updateGameArea, 17);
+        this.canvas.addEventListener("mousemove", this.getPosition, false);
+        this.canvas.id="canvas";
+    },
+    getPosition:function(event)
+    {
+      var x = event.x;
+      var y = event.y;
+
+      var canvas = document.getElementById("canvas");
+
+      position=Math.min(0.92, Math.max(0.08,y/canvasSize.y));
+    },
+    clear : function() {
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+  }
+
+function updateGameArea(){
+  myControllerArea.clear();
+  context.beginPath();
+  context.strokeStyle=color;
+  context.lineWidth = 1;
+  context.moveTo(canvasSize.x/4*3,0);
+  context.lineTo(canvasSize.x/4*3,canvasSize.y);
+  context.stroke();
+  context.beginPath();
+  context.lineWidth = 10;
+  context.moveTo(canvasSize.x/4*3,(position+0.0625)*canvasSize.y);
+  context.lineTo(canvasSize.x/4*3,(position-0.0625)*canvasSize.y);
+  context.stroke();
+  if(dataChannelState!="notConnected"){
+    dataChannel.send(position);
+  }
+}
+
+//Connection
+var callBtn = document.querySelector('#callBtn');
+
+//our username
+var name="c"+Math.ceil(Math.random()*1000000);
+var connectedUser;
+var dataChannelState="notConnected";
+
+//connecting to our signaling server
+var conn = new WebSocket('ws://localhost:9090');
+
+var yourConn;
+
+conn.onopen = function () {
+   console.log("Connected to the signaling server");
+   login();
+};
+
+//when we got a message from a signaling server
+conn.onmessage = function (msg) {
+   console.log("Got message", msg.data);
+   var data = JSON.parse(msg.data);
+
+   switch(data.type) {
+      case "login":
+         handleLogin(data.success);
+         break;
+      //when somebody wants to call us
+      case "offer":
+         handleOffer(data.offer, data.from);
+         break;
+      case "answer":
+         handleAnswer(data.answer);
+         break;
+      //when a remote peer sends an ice candidate to us
+      case "candidate":
+         handleCandidate(data.candidate);
+         break;
+      case "leave":
+         handleLeave();
+         break;
+      default:
+         break;
+   }
+};
+
+conn.onerror = function (err) {
+   console.log("Got error", err);
+};
+
+//alias for sending JSON encoded messages
+function send(message) {
+
+   //attach the other peer username to our messages
+   if (connectedUser) {
+      message.name = connectedUser;
+   }
+   message.from=name;
+   console.log(message);
+   conn.send(JSON.stringify(message));
+};
+
+// Login when the user clicks the button
+function login () {
+   if (name.length > 0) {
+      send({
+         type: "login",
+         name: name
+      });
+   }
+}
+
+function handleLogin(success) {
+   if (success === false) {
+      alert("Ooops...try a different username");
+   } else {
+      restartRTC();
+   }
+};
+
+function restartRTC(){
+  //**********************
+  //Starting a peer connection
+  //**********************
+
+  //using Google public stun server
+  var configuration = {
+    "urls": ["stun:stun.l.google.com:19302"]
+  };
+  yourConn = new RTCPeerConnection(configuration, {optional: [{GoodRtpDataChannels: true}]});
+
+  // Setup ice handling
+  yourConn.onicecandidate = function (event) {
+     if (event.candidate) {
+        send({
+           type: "candidate",
+           candidate: event.candidate
+        });
+     }
+  };
+
+  //creating data channel
+  dataChannel = yourConn.createDataChannel("channel1", {id:50, reliable:false, ordered: true});
+
+  dataChannel.onerror = function (error) {
+     console.log("Ooops...error:", error);
+     dataChannelState="notConnected";
+  };
+
+  dataChannel.onopen = function () {
+     console.log("data channel is opened");
+     dataChannelState="open";
+  };
+
+  //when we receive a message from the other peer, display it on the screen
+  dataChannel.onmessage = function (event) {
+     console.log(event.data);
+     color=event.data;
+     //document.getElementById("before").style.visibility = "hidden";
+     document.getElementById("before").style.left = "200%";
+  };
+
+  dataChannel.onclose = function () {
+     console.log("data channel is closed");
+     dataChannelState="notConnected";
+     color="#000000";
+     document.getElementById('after').style.left = "0%";
+  };
+}
+
+//initiating a call
+callBtn.addEventListener("click", function () {
+   var callToUsername = callToUsernameInput.value;
+
+   if (callToUsername.length > 0) {
+      connectedUser = callToUsername;
+      // create an offer
+      yourConn.createOffer(function (offer) {
+         send({
+            type: "offer",
+            offer: offer
+         });
+         yourConn.setLocalDescription(offer);
+      }, function (error) {
+         alert("Not a valid id.");
+      });
+   }
+
+});
+
+//when somebody sends us an offer
+function handleOffer(offer, from) {
+   connectedUser = from;
+   yourConn.setRemoteDescription(new RTCSessionDescription(offer));
+
+   console.log(yourConn);
+   //create an answer to an offer
+   yourConn.createAnswer(function (answer) {
+      yourConn.setLocalDescription(answer);
+      send({
+         type: "answer",
+         answer: answer
+      });
+   }, function (error) {
+      alert("Error when creating an answer");
+   });
+
+};
+
+function handleLeave() {
+   connectedUser = null;
+   yourConn.close();
+   yourConn.onicecandidate = null;
+   restartRTC();
+};
+
+//when we got an answer from a remote user
+function handleAnswer(answer) {
+   yourConn.setRemoteDescription(new RTCSessionDescription(answer));
+};
+
+//when we got an ice candidate from a remote user
+function handleCandidate(candidate) {
+   yourConn.addIceCandidate(new RTCIceCandidate(candidate));
+};
+
+
+
+
+</script>
+</body>
+</html>
